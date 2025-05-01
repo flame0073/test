@@ -21,26 +21,32 @@
     </select>
     <img id="logo" src="" alt="Channel Logo" hidden>
   </div>
-  <video id="video" controls autoplay muted></video>
+  <!-- Add crossorigin attribute for CORS-enabled fetching -->
+  <video id="video" controls autoplay muted crossorigin="anonymous"></video>
 
   <script>
     /**
-     * Channel type definition:
+     * Channel definition with optional proxy workaround
      * {
      *   name: string,
      *   manifestUri: string,
      *   clearKey?: { [keyId: string]: string },
      *   type: 'mpd' | 'hls',
-     *   logo?: string
+     *   logo?: string,
+     *   useProxy?: boolean  // if true, prefix proxy URL
      * }
      */
+    // Using ThingProxy: no API key needed, suitable for development
+    const PROXY_URL = 'https://thingproxy.freeboard.io/fetch/';
+
     const channels = [
       {
         name: 'A2Z',
         manifestUri: 'https://qp-pldt-live-grp-02-prod.akamaized.net/out/u/cg_a2z.mpd',
         clearKey: { 'f703e4c8ec9041eeb5028ab4248fa094': 'c22f2162e176eee6273a5d0b68d19530' },
         type: 'mpd',
-        logo: 'https://cdn1.clickthecity.com/wp-content/uploads/2020/10/21172907/a2z-logo.png'
+        logo: 'https://cdn1.clickthecity.com/wp-content/uploads/2020/10/21172907/a2z-logo.png',
+        useProxy: true
       },
       {
         name: 'Anime X Hidive',
@@ -53,14 +59,16 @@
         manifestUri: 'https://linearjitp-playback.astro.com.my/dash-wv/dashiso/1006/default_ott.mpd',
         clearKey: { '7ef7e913ce85a1131b27036069169a10': '77d98ed71db7524c27875a09a975f9e6' },
         type: 'mpd',
-        logo: 'https://yt3.ggpht.com/a-/AAuE7mCWtM3oQ6tEkeKei5hQLBFoDIHIt3rBeg13-Q=s900-mo-c-c0xffffffff-rj-k-no'
+        logo: 'https://yt3.ggpht.com/a-/AAuE7mCWtM3oQ6tEkeKei5hQLBFoDIHIt3rBeg13-Q=s900-mo-c-c0xffffffff-rj-k-no',
+        useProxy: true
       },
       {
         name: 'K+',
         manifestUri: 'https://linearjitp-playback.astro.com.my/dash-wv/dashiso/9983/default_ott.mpd',
         clearKey: { 'aa48b28bd723f91214887df6ed9fad10': 'b5a3a800848120c843ae0fa68c09c261' },
         type: 'mpd',
-        logo: 'https://static.wikia.nocookie.net/logopedia/images/d/d8/K-Plus_%282013%29.svg/revision/latest?cb=20240723011130'
+        logo: 'https://static.wikia.nocookie.net/logopedia/images/d/d8/K-Plus_%282013%29.svg/revision/latest?cb=20240723011130',
+        useProxy: true
       }
     ];
 
@@ -76,13 +84,13 @@
       }
 
       video = document.getElementById('video');
+      video.crossOrigin = 'anonymous';
+
       player = new shaka.Player(video);
       player.addEventListener('error', onErrorEvent);
 
-      // Automatically enable English captions if available
-      player.configure({
-        preferredTextLanguage: 'en'
-      });
+      // Enable English captions automatically
+      player.configure({ preferredTextLanguage: 'en' });
       player.setTextTrackVisibility(true);
 
       const select = document.getElementById('channel-select');
@@ -95,41 +103,32 @@
 
       select.addEventListener('change', () => {
         const idx = select.value;
-        if (idx !== '') {
-          loadChannel(channels[idx]);
-        }
+        if (idx !== '') loadChannel(channels[idx]);
       });
 
-      // Auto-load first channel
       await loadChannel(channels[0]);
     }
 
     async function loadChannel(ch) {
       try {
         await player.unload();
-        // Update logo
         const logoEl = document.getElementById('logo');
         if (ch.logo) {
           logoEl.src = ch.logo;
           logoEl.hidden = false;
-        } else {
-          logoEl.hidden = true;
-        }
+        } else logoEl.hidden = true;
 
         // DRM config for MPD
         if (ch.type === 'mpd' && ch.clearKey) {
-          player.configure({
-            drm: {
-              clearKeys: ch.clearKey,
-              servers: { 'org.w3.clearkey': '' }
-            }
-          });
+          player.configure({ drm: { clearKeys: ch.clearKey, servers: { 'org.w3.clearkey': '' } } });
         } else {
-          // Remove any previous DRM config
           player.configure({ drm: { clearKeys: {}, servers: {} } });
         }
 
-        await player.load(ch.manifestUri);
+        let uri = ch.manifestUri;
+        if (ch.useProxy) uri = PROXY_URL + uri;
+
+        await player.load(uri);
         console.log('Loaded channel:', ch.name);
       } catch (error) {
         onError(error);
